@@ -1,7 +1,7 @@
 import axios from 'axios'
 import { getAddress, Hash } from 'viem'
 
-import Cacher from 'utils/casher'
+import Cacher from 'utils/cacher'
 
 import { PriceResponse } from './types'
 
@@ -14,7 +14,7 @@ const inchApiRequestHeaders = {
   Authorization: `Bearer ${API_KEY}`,
 }
 
-async function priceFetcher(tokens: Hash[]) {
+async function priceFetcher(tokens: Hash[]): Promise<PriceResponse> {
   const url = `${API_PRICE_URL}/${tokens.join(',')}`
 
   const config = {
@@ -26,7 +26,6 @@ async function priceFetcher(tokens: Hash[]) {
 
   try {
     const response = await axios.get<PriceResponse>(url, config)
-    console.log('Fetched token prices:', response.data)
     return Object.entries(response.data).reduce<PriceResponse>((acc, [key, value]) => {
       acc[getAddress(key)] = value
       return acc
@@ -37,12 +36,10 @@ async function priceFetcher(tokens: Hash[]) {
   }
 }
 
-const pricesCacher = new Cacher<Hash[], Promise<PriceResponse>>(API_PRICE_CACHE_TIME, async (tokens: Hash[]) =>
-  priceFetcher(tokens),
-)
+const pricesCacher = new Cacher(API_PRICE_CACHE_TIME, async (tokens: Hash[]) => priceFetcher(tokens))
 
-async function fetchAssetsPrices(tokens: Hash[]) {
-  return await pricesCacher.get(tokens)
+async function fetchAssetsPrices(tokens: Hash[]): Promise<PriceResponse> {
+  return pricesCacher.get(tokens)
 }
 
 export default fetchAssetsPrices

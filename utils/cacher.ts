@@ -20,12 +20,10 @@ class Cacher<A extends any[], T> {
     const cached = this.cache.get(key)
 
     if (cached?.pendingPromise) {
-      console.log('1')
       return cached.pendingPromise
     }
 
     if (cached && cached.timestamp && Date.now() - cached.timestamp <= this.cacheTime) {
-      console.log('2')
       return cached.result!
     }
 
@@ -50,7 +48,6 @@ class Cacher<A extends any[], T> {
           this.cache.delete(key)
           throw err
         })
-      console.log('3')
 
       return result
     }

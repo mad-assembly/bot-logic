@@ -7,6 +7,7 @@ import { PriceResponse } from 'prices/types'
 import getOrders from 'orders/1inch'
 import getQuote from 'quoters/uniswap'
 import fetchAssetsPrices from 'prices/1inch'
+import getLiquidity from 'flashLoan/balancer'
 
 const BOT_CONTRACT = getAddress('0x27E82Ba6AfEbf3Eee3A8E1613C2Af5987929a546')
 
@@ -58,6 +59,9 @@ function getQuoteParamsFromOrder(order: Order) {
 async function main() {
   const orders: Omit<Orders, 'volume'> = await getOrders(TOKENS, NAMES, WETH)
   const prices: PriceResponse = await fetchAssetsPrices(TOKENS)
+  console.log('Prices', prices)
+  const liquidity: bigint = await getLiquidity(WETH)
+  console.log('Liquidity', formatEther(liquidity))
 
   const sortedOrders = orders
     .map<Order>((order: Omit<Orders, 'volume'>) => ({
@@ -67,18 +71,23 @@ async function main() {
     .sort((a: Order, b: Order) => b.volume - a.volume)
 
   for (let i = 0; i < sortedOrders.length; i++) {
-    const quote = await getQuote(publicClient, getQuoteParamsFromOrder(sortedOrders[i]))
-    console.log(`QUOTE ${NAMES[sortedOrders[i].receiveAsset]} -> ${NAMES[sortedOrders[i].sendAsset]}`)
-
-    if (BigInt(sortedOrders[i].sendAmount) >= quote.amountOut) {
-      console.log('RETURN', quote.amountOut - BigInt(sortedOrders[i].sendAmount))
+    const order = sortedOrders[i]
+    if (liquidity < BigInt(order.sendAmount)) {
       continue
     }
-    console.log('GOCHA', formatEther(quote.amountOut - BigInt(sortedOrders[i].sendAmount)), {
-      makerAsset: sortedOrders[i].sendAsset,
-      makerAmount: BigInt(sortedOrders[i].sendAmount),
-      takerAsset: sortedOrders[i].receiveAsset,
-      takerAmount: BigInt(sortedOrders[i].receiveAmount),
+
+    const quote = await getQuote(publicClient, getQuoteParamsFromOrder(order))
+    console.log(`QUOTE ${NAMES[order.receiveAsset]} -> ${NAMES[order.sendAsset]}`)
+
+    if (BigInt(order.sendAmount) >= quote.amountOut) {
+      console.log('RETURN', quote.amountOut - BigInt(order.sendAmount))
+      continue
+    }
+    console.log('GOCHA', formatEther(quote.amountOut - BigInt(order.sendAmount)), {
+      makerAsset: order.sendAsset,
+      makerAmount: BigInt(order.sendAmount),
+      takerAsset: order.receiveAsset,
+      takerAmount: BigInt(order.receiveAmount),
       amountOut: quote.amountOut,
     })
   }
