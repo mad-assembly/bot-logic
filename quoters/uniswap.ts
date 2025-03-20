@@ -1,12 +1,8 @@
-import { Hash, PublicClient, encodeFunctionData, getAddress } from 'viem'
-
-import { Orders } from 'orders/types'
+import { Hash, PublicClient, getAddress, getContract } from 'viem'
 
 import { bigIntMax } from 'utils/math'
-import { getSolidityTime } from 'utils/crypto'
 
-import { QuoteResults } from './types'
-import { UNISWAP_V3_FACTORY_ABI, UNISWAP_V3_POOL_ABI, UNISWAP_V3_ROUTER_ABI } from './abis'
+import { UNISWAP_QUOTER_ABI, UNISWAP_V3_FACTORY_ABI, UNISWAP_V3_POOL_ABI } from './abis'
 
 type TradeParams = {
   receiver: Hash
@@ -30,12 +26,16 @@ type GetQuoteInput = {
   isExactOutput: boolean
   sendToken: Token & { minimalToReceive?: bigint }
   hopToken?: Hash
-  receiveToken: Token & { minimalToSend?: bigint }
+  receiveToken: Token & { maximumToSend?: bigint }
 }
 
-const DEADLINE_IN_MINUTES = 30
+type GetQuoteOutput = {
+  amountIn: bigint
+  amountOut: bigint
+  path: Hash
+}
 
-// const WETH = getAddress('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2')
+const UNISWAP_QUOTER_ADDRESS = getAddress('0x61fFE014bA17989E743c5F6cB21bF9697530B21e')
 const UNISWAP_V3_FACTORY_ADDRESS = getAddress('0x1F98431c8aD98523631AE4a59f267346ea31F984')
 const UNISWAP_V3_ROUTER_ADDRESS = getAddress('0xE592427A0AEce92De3Edee1F18E0157C05861564')
 
@@ -94,47 +94,37 @@ async function buildPath(client: PublicClient, params: TradeParams) {
   return encodePath([params.sendToken, params.hopToken, params.receiveToken], [fee0, fee1])
 }
 
-async function getTradeCalldata(client: PublicClient, params: TradeParams) {
+async function getTradeQuote(client: PublicClient, params: TradeParams): Promise<GetQuoteOutput> {
   const path = await buildPath(client, params)
+  const contract = getContract({
+    client,
+    abi: UNISWAP_QUOTER_ABI,
+    address: UNISWAP_QUOTER_ADDRESS,
+  })
 
   if (params.isExactOutput) {
     if (!params.receiveAmount) {
       throw new Error('receiveToken.amount (receiveAmount) is required')
     }
-    const exactOutputParams = {
+
+    const quote = await contract.simulate.quoteExactOutput([path, params.receiveAmount], { account: params.receiver })
+
+    return {
       path,
-      recipient: params.receiver,
+      amountIn: quote.result[0],
       amountOut: params.receiveAmount,
-      amountInMaximum: params.amountInMaximum || 1n,
-      deadline: getSolidityTime(DEADLINE_IN_MINUTES),
     }
-
-    const calldata = encodeFunctionData({
-      abi: UNISWAP_V3_ROUTER_ABI,
-      functionName: 'exactOutput',
-      args: [exactOutputParams],
-    })
-
-    return calldata
   } else {
     if (!params.sendAmount) {
       throw new Error('sendToken.amount (sendAmount) is required')
     }
-    const exactInputParams = {
+
+    const quote = await contract.simulate.quoteExactInput([path, params.sendAmount], { account: params.receiver })
+    return {
       path,
-      recipient: params.receiver,
       amountIn: params.sendAmount,
-      amountOutMinimum: params.amountOutMinimum || 1n,
-      deadline: getSolidityTime(DEADLINE_IN_MINUTES),
+      amountOut: quote.result[0],
     }
-
-    const calldata = encodeFunctionData({
-      abi: UNISWAP_V3_ROUTER_ABI,
-      functionName: 'exactInput',
-      args: [exactInputParams],
-    })
-
-    return calldata
   }
 }
 
@@ -151,49 +141,14 @@ async function getQuote(
     hopToken: hopToken,
     receiveToken: receiveToken.address,
     receiveAmount: receiveToken.amount,
-    amountInMaximum: receiveToken.minimalToSend,
+    amountInMaximum: receiveToken.maximumToSend,
   }
 
-  const calldata = await getTradeCalldata(client, params)
+  const quoteResult = await getTradeQuote(client, params)
   return {
-    calldata,
+    ...quoteResult,
     address: UNISWAP_V3_ROUTER_ADDRESS,
   }
 }
 
-async function getQuotes(client: PublicClient, receiver: Hash, isExactOutput: boolean, orders: Orders) {
-  const quotes = []
-  for (let i = 0; i < orders.length; i++) {
-    quotes.push(
-      getQuote(client, {
-        receiver,
-        isExactOutput,
-        sendToken: {
-          address: orders[i].receiveAsset,
-          amount: BigInt(orders[i].receiveAmount),
-          minimalToReceive: BigInt(orders[i].sendAmount),
-        },
-        // hopToken: orders[i].receiveAsset === WETH ? undefined : orders[i].receiveAsset,
-        receiveToken: {
-          address: orders[i].sendAsset,
-          amount: BigInt(orders[i].sendAmount) ,
-          minimalToSend: BigInt(orders[i].receiveAmount) ,
-        },
-      }),
-    )
-  }
-
-  const dertyResults = await Promise.allSettled(quotes)
-  const results = dertyResults.reduce<QuoteResults>((acc, quote, index) => {
-    if (quote.status === 'fulfilled') {
-      acc.push({
-        quote: quote.value,
-        order: orders[index],
-      })
-    }
-    return acc
-  }, [])
-  return results
-}
-
-export default getQuotes
+export default getQuote

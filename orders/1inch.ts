@@ -176,7 +176,7 @@ async function getOrders(tokens: Hash[], names: Record<Hash, string>, sendAsset?
   const orders = await fetchAllPairs(tokens, names, sendAsset)
 
   await sleep(API_CALL_DELAY)
-  const prices = await fetchAssetsPrice(tokens)
+  const prices = await fetchAssetsPrice(tokens) // node cash
 
   const sortedOrders = orders
     .map<Order>((order) => ({
@@ -189,6 +189,7 @@ async function getOrders(tokens: Hash[], names: Record<Hash, string>, sendAsset?
       receiver: getAddress(order.data.receiver),
       receiveAsset: getAddress(order.data.takerAsset),
       receiveAmount: order.data.takingAmount,
+      makerTraits: order.data.makerTraits,
       volume: calculateOrderVolume(order, prices),
     }))
     .sort((a, b) => b.volume - a.volume)

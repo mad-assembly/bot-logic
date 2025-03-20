@@ -11,6 +11,7 @@ export type Order = {
   receiveAsset: Hash
   receiveAmount: string
   volume: number
+  makerTraits: string
 }
 
 export type Orders = Order[]
