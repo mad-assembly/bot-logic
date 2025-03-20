@@ -1,9 +1,12 @@
 import { mainnet } from 'viem/chains'
 import { createPublicClient, fallback, formatEther, getAddress, Hash, http } from 'viem'
 
+import { Order, Orders } from 'orders/types'
+import { PriceResponse } from 'prices/types'
+
 import getOrders from 'orders/1inch'
 import getQuote from 'quoters/uniswap'
-import { Order } from '@/orders/types.js'
+import fetchAssetsPrices from 'prices/1inch'
 
 const BOT_CONTRACT = getAddress('0x27E82Ba6AfEbf3Eee3A8E1613C2Af5987929a546')
 
@@ -29,6 +32,11 @@ const publicClient = createPublicClient({
   ),
 })
 
+function calculateOrderVolume(order: Order, prices: Record<Hash, string>): number {
+  const tokenPrice = prices[getAddress(order.sendAsset)] || '0'
+  return parseFloat(order.receiveAmount) * parseFloat(tokenPrice)
+}
+
 function getQuoteParamsFromOrder(order: Order) {
   return {
     receiver: BOT_CONTRACT,
@@ -48,21 +56,29 @@ function getQuoteParamsFromOrder(order: Order) {
 }
 
 async function main() {
-  const orders = await getOrders(TOKENS, NAMES, WETH)
+  const orders: Omit<Orders, 'volume'> = await getOrders(TOKENS, NAMES, WETH)
+  const prices: PriceResponse = await fetchAssetsPrices(TOKENS)
 
-  for (let i = 0; i < orders.length; i++) {
-    const quote = await getQuote(publicClient, getQuoteParamsFromOrder(orders[i]))
-    console.log(`QUOTE ${NAMES[orders[i].receiveAsset]} -> ${NAMES[orders[i].sendAsset]}`)
+  const sortedOrders = orders
+    .map<Order>((order: Omit<Orders, 'volume'>) => ({
+      ...order,
+      volume: calculateOrderVolume(order, prices),
+    }))
+    .sort((a: Order, b: Order) => b.volume - a.volume)
 
-    if (BigInt(orders[i].sendAmount) >= quote.amountOut) {
-      console.log('RETURN', quote.amountOut - BigInt(orders[i].sendAmount))
+  for (let i = 0; i < sortedOrders.length; i++) {
+    const quote = await getQuote(publicClient, getQuoteParamsFromOrder(sortedOrders[i]))
+    console.log(`QUOTE ${NAMES[sortedOrders[i].receiveAsset]} -> ${NAMES[sortedOrders[i].sendAsset]}`)
+
+    if (BigInt(sortedOrders[i].sendAmount) >= quote.amountOut) {
+      console.log('RETURN', quote.amountOut - BigInt(sortedOrders[i].sendAmount))
       continue
     }
-    console.log('GOCHA', formatEther(quote.amountOut - BigInt(orders[i].sendAmount)), {
-      makerAsset: orders[i].sendAsset,
-      makerAmount: BigInt(orders[i].sendAmount),
-      takerAsset: orders[i].receiveAsset,
-      takerAmount: BigInt(orders[i].receiveAmount),
+    console.log('GOCHA', formatEther(quote.amountOut - BigInt(sortedOrders[i].sendAmount)), {
+      makerAsset: sortedOrders[i].sendAsset,
+      makerAmount: BigInt(sortedOrders[i].sendAmount),
+      takerAsset: sortedOrders[i].receiveAsset,
+      takerAmount: BigInt(sortedOrders[i].receiveAmount),
       amountOut: quote.amountOut,
     })
   }
