@@ -3,6 +3,7 @@ import { createPublicClient, fallback, formatEther, getAddress, Hash, http } fro
 
 import getOrders from 'orders/1inch'
 import getQuote from 'quoters/uniswap'
+import { Order } from '@/orders/types.js'
 
 const BOT_CONTRACT = getAddress('0x27E82Ba6AfEbf3Eee3A8E1613C2Af5987929a546')
 
@@ -28,25 +29,29 @@ const publicClient = createPublicClient({
   ),
 })
 
+function getQuoteParamsFromOrder(order: Order) {
+  return {
+    receiver: BOT_CONTRACT,
+    isExactOutput: false,
+    sendToken: {
+      address: order.receiveAsset,
+      amount: BigInt(order.receiveAmount),
+      minimalToReceive: BigInt(order.sendAmount),
+    },
+    // hopToken: orders[i].receiveAsset === WETH ? undefined : orders[i].receiveAsset,
+    receiveToken: {
+      address: order.sendAsset,
+      amount: BigInt(order.sendAmount),
+      maximumToSend: BigInt(order.receiveAmount),
+    },
+  }
+}
+
 async function main() {
   const orders = await getOrders(TOKENS, NAMES, WETH)
 
   for (let i = 0; i < orders.length; i++) {
-    const quote = await getQuote(publicClient, {
-      receiver: BOT_CONTRACT,
-      isExactOutput: false,
-      sendToken: {
-        address: orders[i].receiveAsset,
-        amount: BigInt(orders[i].receiveAmount),
-        minimalToReceive: BigInt(orders[i].sendAmount),
-      },
-      // hopToken: orders[i].receiveAsset === WETH ? undefined : orders[i].receiveAsset,
-      receiveToken: {
-        address: orders[i].sendAsset,
-        amount: BigInt(orders[i].sendAmount),
-        maximumToSend: BigInt(orders[i].receiveAmount),
-      },
-    })
+    const quote = await getQuote(publicClient, getQuoteParamsFromOrder(orders[i]))
     console.log(`QUOTE ${NAMES[orders[i].receiveAsset]} -> ${NAMES[orders[i].sendAsset]}`)
 
     if (BigInt(orders[i].sendAmount) >= quote.amountOut) {

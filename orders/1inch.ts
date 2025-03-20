@@ -3,6 +3,8 @@ import { getAddress, Hash } from 'viem'
 
 import { Order, Orders } from 'orders/types'
 
+import Cacher from 'utils/casher'
+
 type Fetch1InchOrderBookInput = {
   page: number
   takerAsset: Hash
@@ -40,8 +42,10 @@ export type InchOrders = InchOrder[]
 const API_CALL_LIMIT = 500
 const API_CALL_DELAY = 1000
 const API_URL = 'https://api.1inch.dev/orderbook/v4.0/1/all'
-const API_PRICE_URL = 'https://api.1inch.dev/price/v1.1/1'
 const API_KEY = 'JCal5tB5HMRzgC76x4UekjB320ieQQlT' // TODO: .env
+
+const API_PRICE_URL = 'https://api.1inch.dev/price/v1.1/1'
+const API_PRICE_CACHE_TIME = 5 * 60 * 1000
 
 const inchApiRequestHeaders = {
   Authorization: `Bearer ${API_KEY}`,
@@ -144,28 +148,31 @@ async function fetchAllPairs(tokens: Hash[], names: Record<Hash, string>, sendAs
 }
 
 // ToDo rewrite to contract https://portal.1inch.dev/documentation/contracts/spot-price-aggregator/examples
-async function fetchAssetsPrice(tokens: Hash[]) {
-  const url = `${API_PRICE_URL}/${tokens.join(',')}`
+const fetchAssetsPrice = new Cacher<Hash[], Promise<Record<Hash, string>>>(
+  API_PRICE_CACHE_TIME,
+  async (tokens: Hash[]) => {
+    const url = `${API_PRICE_URL}/${tokens.join(',')}`
 
-  const config = {
-    headers: inchApiRequestHeaders,
-    params: {
-      currency: 'USD',
-    },
-  }
+    const config = {
+      headers: inchApiRequestHeaders,
+      params: {
+        currency: 'USD',
+      },
+    }
 
-  try {
-    const response = await axios.get<Record<Hash, string>>(url, config)
-    console.log('Fetched token prices:', response.data)
-    return Object.entries(response.data).reduce<Record<Hash, string>>((acc, [key, value]) => {
-      acc[getAddress(key)] = value
-      return acc
-    }, {})
-  } catch (error) {
-    console.error('Error fetching token prices:', error)
-    return {}
-  }
-}
+    try {
+      const response = await axios.get<Record<Hash, string>>(url, config)
+      console.log('Fetched token prices:', response.data)
+      return Object.entries(response.data).reduce<Record<Hash, string>>((acc, [key, value]) => {
+        acc[getAddress(key)] = value
+        return acc
+      }, {})
+    } catch (error) {
+      console.error('Error fetching token prices:', error)
+      return {}
+    }
+  },
+)
 
 function calculateOrderVolume(order: InchOrder, prices: Record<Hash, string>): number {
   const tokenPrice = prices[getAddress(order.data.makerAsset as Hash)] || '0'
@@ -176,7 +183,10 @@ async function getOrders(tokens: Hash[], names: Record<Hash, string>, sendAsset?
   const orders = await fetchAllPairs(tokens, names, sendAsset)
 
   await sleep(API_CALL_DELAY)
-  const prices = await fetchAssetsPrice(tokens) // node cash
+  const prices = await fetchAssetsPrice.get<Hash[], Record<Hash, string>>(tokens)
+  const prices1 = await fetchAssetsPrice.get<Hash[], Record<Hash, string>>(tokens)
+  await sleep(API_CALL_DELAY)
+  const prices2 = await fetchAssetsPrice.get<Hash[], Record<Hash, string>>(tokens)
 
   const sortedOrders = orders
     .map<Order>((order) => ({
