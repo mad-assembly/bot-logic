@@ -35,7 +35,7 @@ type GetQuoteInput = {
 
 const DEADLINE_IN_MINUTES = 30
 
-const WETH = getAddress('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2')
+// const WETH = getAddress('0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2')
 const UNISWAP_V3_FACTORY_ADDRESS = getAddress('0x1F98431c8aD98523631AE4a59f267346ea31F984')
 const UNISWAP_V3_ROUTER_ADDRESS = getAddress('0xE592427A0AEce92De3Edee1F18E0157C05861564')
 
@@ -169,15 +169,15 @@ async function getQuotes(client: PublicClient, receiver: Hash, isExactOutput: bo
         receiver,
         isExactOutput,
         sendToken: {
-          address: orders[i].sendAsset,
-          amount: BigInt(orders[i].sendAmount),
-          minimalToReceive: BigInt(orders[i].receiveAmount),
-        },
-        hopToken: orders[i].receiveAsset === WETH ? undefined : orders[i].receiveAsset,
-        receiveToken: {
-          address: WETH,
+          address: orders[i].receiveAsset,
           amount: BigInt(orders[i].receiveAmount),
-          minimalToSend: BigInt(orders[i].sendAmount),
+          minimalToReceive: BigInt(orders[i].sendAmount),
+        },
+        // hopToken: orders[i].receiveAsset === WETH ? undefined : orders[i].receiveAsset,
+        receiveToken: {
+          address: orders[i].sendAsset,
+          amount: BigInt(orders[i].sendAmount) ,
+          minimalToSend: BigInt(orders[i].receiveAmount) ,
         },
       }),
     )

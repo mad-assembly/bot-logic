@@ -101,17 +101,17 @@ async function fetchAllOrdersForPair(
   return allOrders
 }
 
-function createPairs(tokens: Hash[], receivedAsset?: Hash) {
+function createPairs(tokens: Hash[], sendAsset?: Hash) {
   const pairs = []
-  if (receivedAsset) {
+  if (sendAsset) {
     for (let i = 0; i < tokens.length; i++) {
-      const makerAsset = tokens[i]
+      const takerAsset = tokens[i]
 
-      if (makerAsset === receivedAsset) {
+      if (takerAsset === sendAsset) {
         continue
       }
 
-      pairs.push([makerAsset, receivedAsset])
+      pairs.push([sendAsset, takerAsset])
     }
   } else {
     for (let i = 0; i < tokens.length; i++) {
@@ -127,9 +127,9 @@ function createPairs(tokens: Hash[], receivedAsset?: Hash) {
   return pairs
 }
 
-async function fetchAllPairs(tokens: Hash[], names: Record<Hash, string>, receivedAsset?: Hash): Promise<InchOrders> {
+async function fetchAllPairs(tokens: Hash[], names: Record<Hash, string>, sendAsset?: Hash): Promise<InchOrders> {
   const allOrders: InchOrders = []
-  const pairs = createPairs(tokens, receivedAsset)
+  const pairs = createPairs(tokens, sendAsset)
 
   for (let i = 0; i < pairs.length; i++) {
     const [makerAsset, takerAsset] = pairs[i]
@@ -172,8 +172,8 @@ function calculateOrderVolume(order: InchOrder, prices: Record<Hash, string>): n
   return parseFloat(order.remainingMakerAmount) * parseFloat(tokenPrice)
 }
 
-async function getOrders(tokens: Hash[], names: Record<Hash, string>, receivedAsset?: Hash): Promise<Orders> {
-  const orders = await fetchAllPairs(tokens, names, receivedAsset)
+async function getOrders(tokens: Hash[], names: Record<Hash, string>, sendAsset?: Hash): Promise<Orders> {
+  const orders = await fetchAllPairs(tokens, names, sendAsset)
 
   await sleep(API_CALL_DELAY)
   const prices = await fetchAssetsPrice(tokens)
